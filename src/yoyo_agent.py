@@ -64,8 +64,10 @@ class AgentState:
     started_at: float = field(default_factory=time.time)
     # Real-time tracker fields
     tracker_state: str = "IDLE"    # "IDLE" | "AI_WEB" | "IDE"
-    tracker_detail: str = ""       # e.g. "Claude - Writing code…" or "app.js · yoyo-dev"
+    tracker_detail: str = ""       # e.g. "Claude Desktop: Writing code"
+    tracker_emoji: str = ""        # emoji from ai_tracker
     tracker_title: str = ""        # raw window title
+    tracker_process: str = ""      # exe name e.g. "claude.exe"
 
 
 class YoYoAgent:
@@ -78,7 +80,8 @@ class YoYoAgent:
         self._broadcast: Callable | None = None
 
     # ── Tracker integration ────────────────────────────────────
-    def set_tracker_state(self, state: str, detail: str, window_title: str = "") -> bool:
+    def set_tracker_state(self, state: str, detail: str, window_title: str = "",
+                          emoji: str = "", process: str = "") -> bool:
         """
         Called by the /api/tracker endpoint.
         Returns True if anything changed (so the caller can broadcast).
@@ -87,9 +90,11 @@ class YoYoAgent:
             self.state.tracker_state != state
             or self.state.tracker_detail != detail
         )
-        self.state.tracker_state = state
-        self.state.tracker_detail = detail
-        self.state.tracker_title  = window_title
+        self.state.tracker_state   = state
+        self.state.tracker_detail  = detail
+        self.state.tracker_emoji   = emoji
+        self.state.tracker_title   = window_title
+        self.state.tracker_process = process
         return changed
 
     def get_state(self) -> dict:
@@ -106,7 +111,9 @@ class YoYoAgent:
             # Real tracker data
             "tracker_state":       s.tracker_state,
             "tracker_detail":      s.tracker_detail,
+            "tracker_emoji":       s.tracker_emoji,
             "tracker_title":       s.tracker_title,
+            "tracker_process":     s.tracker_process,
         }
 
     def get_stats(self) -> dict:
@@ -128,35 +135,15 @@ class YoYoAgent:
     def _real_task_info(self) -> tuple[str, str, str]:
         """
         Returns (emoji, task_name, sub_detail) based on current tracker state.
+        emoji comes directly from ai_tracker — no need to guess by title.
         """
         s = self.state
         detail = s.tracker_detail or s.tracker_title[:60]
-
-        if s.tracker_state == "AI_WEB":
-            tl = (s.tracker_title or s.tracker_detail or "").lower()
-            if "antigravity" in tl:
-                emoji = "🪐"
-                name  = f"Antigravity: {detail}" if detail else "Antigravity IDE is working…"
-            elif "claude" in tl:
-                emoji = "🤖"
-                name  = f"Claude: {detail}" if detail else "Claude is thinking…"
-            elif "chatgpt" in tl:
-                emoji = "💬"
-                name  = f"ChatGPT: {detail}" if detail else "ChatGPT is responding…"
-            elif "gemini" in tl:
-                emoji = "✨"
-                name  = f"Gemini: {detail}" if detail else "Gemini is working…"
-            else:
-                emoji = "🌐"
-                name  = f"AI: {detail}" if detail else "AI Web — working…"
-            return emoji, name, detail
-
-        if s.tracker_state == "IDE":
-            emoji = "💻"
-            name  = f"Coding: {detail}" if detail else "Coding in IDE…"
-            return emoji, name, detail
-
-        return "⏸", "Idle", ""
+        emoji  = s.tracker_emoji or ("💻" if s.tracker_state == "IDE" else "🌐")
+        name   = detail if detail else (
+            "Coding in IDE…" if s.tracker_state == "IDE" else "AI is working…"
+        )
+        return emoji, name, detail
 
     # ── Main agent loop ────────────────────────────────────────
     async def run_loop(self, broadcast: Callable):

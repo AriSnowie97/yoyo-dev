@@ -170,21 +170,25 @@ async def post_notification(body: dict):
 async def update_tracker(request: Request):
     """
     Called by ai_tracker.py every time the active window changes.
-    Payload: { state, detail, window_title }
+    Payload: { state, detail, emoji, window_title, process }
     """
     data         = await request.json()
     state        = data.get("state", "IDLE")
     detail       = data.get("detail", "")
+    emoji        = data.get("emoji", "")
     window_title = data.get("window_title", "")
+    process      = data.get("process", "")
 
-    changed = agent.set_tracker_state(state, detail, window_title)
+    changed = agent.set_tracker_state(state, detail, window_title, emoji=emoji, process=process)
 
     # Always broadcast so the UI badge updates in real time
     await broadcast({
         "type":         "tracker_update",
         "state":        state,
         "detail":       detail,
+        "emoji":        emoji,
         "window_title": window_title,
+        "process":      process,
     })
 
     return {"status": "ok", "changed": changed}
