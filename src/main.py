@@ -90,6 +90,20 @@ async def task_start(body: dict):
     await broadcast({"type": "agent_state", **agent.get_state()})
     return {"ok": True}
 
+@app.post("/api/reset")
+async def reset_agent():
+    agent.reset()
+    await broadcast({"type": "update", "state": agent.get_stats()})
+    return {"status": "ok"}
+
+@app.post("/api/tracker")
+async def update_tracker(request: Request):
+    data = await request.json()
+    state = data.get("state", "IDLE")
+    await broadcast({"type": "tracker_update", "state": state})
+    return {"status": "ok"}
+
+
 @app.post("/api/task/stop")
 async def task_stop():
     agent.state.status = AgentStatus.DONE

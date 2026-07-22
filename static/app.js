@@ -695,6 +695,26 @@ function connectWS() {
     if (msg.type === 'do_trick') {
       game.requestTrick(msg.trick_id);
     }
+    
+    if (msg.type === 'tracker_update') {
+      const stateEl = document.getElementById('tracker-state');
+      const badgeEl = document.getElementById('tracker-badge');
+      if (stateEl && badgeEl) {
+        if (msg.state === 'AI_WEB') {
+          stateEl.textContent = 'CLAUDE / WEB AI';
+          stateEl.style.color = '#00d4ff';
+          badgeEl.style.borderColor = '#00d4ff';
+        } else if (msg.state === 'IDE') {
+          stateEl.textContent = 'CODING (IDE)';
+          stateEl.style.color = '#ffe600';
+          badgeEl.style.borderColor = '#ffe600';
+        } else {
+          stateEl.textContent = 'IDLE';
+          stateEl.style.color = 'rgba(255,255,255,0.5)';
+          badgeEl.style.borderColor = 'rgba(255,255,255,0.2)';
+        }
+      }
+    }
   };
 
   ws.onclose = () => {
