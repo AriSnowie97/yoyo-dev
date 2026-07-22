@@ -184,7 +184,7 @@ class YoYoAgent:
                         await asyncio.sleep(3)
                         elapsed += 3.0
 
-                        # Re-read in case detail changed
+                        # Re-read in case window title / detail changed
                         emoji, name, detail = self._real_task_info()
                         self.state.current_task = name
                         self.state.current_task_emoji = emoji
@@ -214,65 +214,16 @@ class YoYoAgent:
                     self.state.current_task_emoji = ""
                     self.state.progress = 0.0
                     await broadcast({"type": "agent_state", **self.get_state()})
-                    await asyncio.sleep(random.uniform(3, 8))
 
                 else:
-                    # ── IDLE: run a simulated background task ──
-                    task = random.choice(TASKS)
-                    self._task = task
-                    duration = random.uniform(task.duration_min, task.duration_max)
-                    self._task_start = time.time()
-                    self._task_end = self._task_start + duration
-
-                    self.state.status = AgentStatus.WORKING
-                    self.state.current_task = task.name
-                    self.state.current_task_emoji = task.emoji
+                    # ── IDLE: just wait, no fake tasks ──
+                    self.state.status = AgentStatus.IDLE
+                    self.state.current_task = ""
+                    self.state.current_task_emoji = ""
                     self.state.progress = 0.0
-
+                    # Broadcast only if something changed
                     await broadcast({"type": "agent_state", **self.get_state()})
-
-                    # Progress updates every 2 s (also bail if tracker wakes up)
-                    while time.time() < self._task_end:
-                        await asyncio.sleep(2)
-                        if self.state.tracker_state in ("AI_WEB", "IDE"):
-                            break   # real activity detected — stop sim
-                        elapsed = time.time() - self._task_start
-                        self.state.progress = min(elapsed / duration, 1.0)
-                        await broadcast({"type": "agent_state", **self.get_state()})
-
-                    if self.state.tracker_state not in ("AI_WEB", "IDE"):
-                        # Task completed normally
-                        self.state.status = AgentStatus.DONE
-                        self.state.progress = 1.0
-                        self.state.tasks_completed += 1
-                        self.state.total_bonus_pts += task.bonus_pts
-                        self.state.task_history.append({
-                            "task":     task.name,
-                            "emoji":    task.emoji,
-                            "pts":      task.bonus_pts,
-                            "time":     int(time.time()),
-                            "duration": round(duration, 1),
-                            "real":     False,
-                        })
-
-                        await broadcast({"type": "agent_state", **self.get_state()})
-                        await asyncio.sleep(0.2)
-                        await broadcast({
-                            "type":      "notification",
-                            "title":     f"{task.emoji} {task.name}",
-                            "message":   task.done_message,
-                            "bonus_pts": task.bonus_pts,
-                            "level":     "success",
-                            "duration":  round(duration, 0),
-                        })
-
-                        self.state.status = AgentStatus.IDLE
-                        self.state.current_task = ""
-                        self.state.current_task_emoji = ""
-                        self.state.progress = 0.0
-                        await broadcast({"type": "agent_state", **self.get_state()})
-                        rest = random.uniform(5, 20)
-                        await asyncio.sleep(rest)
+                    await asyncio.sleep(3)
 
             except asyncio.CancelledError:
                 raise
@@ -280,3 +231,4 @@ class YoYoAgent:
                 import logging
                 logging.getLogger(__name__).error(f"Agent loop error: {e}")
                 await asyncio.sleep(5)
+

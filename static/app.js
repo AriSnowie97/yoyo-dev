@@ -648,7 +648,9 @@ function updateAgentUI(data) {
     iconEl.textContent = data.current_task_emoji || '🤖';
     document.getElementById('progress-wrap').style.display = '';
   } else {
-    taskEl.textContent = data.status === 'DONE' ? 'Task complete! 🎉' : 'Waiting for work...';
+    taskEl.textContent = data.status === 'DONE'
+      ? '✅ Task complete!'
+      : '👀 Waiting for activity…';
     progEl.style.width = data.status === 'DONE' ? '100%' : '0%';
     iconEl.textContent = data.status === 'DONE' ? '✅' : '🤖';
     document.getElementById('progress-wrap').style.display =
