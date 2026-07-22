@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YoYo Dev 🪀 — Play while your agent works!</title>
+  <meta name="description" content="Play yo-yo while your AI agent handles the boring stuff. Get notified when tasks complete!" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <!-- CRT scanline overlay -->
+  <div class="crt"></div>
+
+  <!-- Toast container -->
+  <div id="toast-container"></div>
+
+  <div class="app">
+
+    <!-- ── TOP BAR ── -->
+    <header class="topbar">
+      <div class="topbar-logo">🪀 YOYO DEV</div>
+
+      <div class="topbar-hud">
+        <div class="hud-block" id="hud-score">
+          <div class="hud-label">SCORE</div>
+          <div class="hud-value" id="score-val">0</div>
+        </div>
+        <div class="hud-block hud-combo" id="hud-combo">
+          <div class="hud-label">COMBO</div>
+          <div class="hud-value" id="combo-val">x1</div>
+        </div>
+        <div class="hud-block">
+          <div class="hud-label">TRICKS</div>
+          <div class="hud-value" id="tricks-val">0</div>
+        </div>
+        <div class="hud-block">
+          <div class="hud-label">BONUS</div>
+          <div class="hud-value hud-bonus" id="bonus-val">+0</div>
+        </div>
+      </div>
+
+      <div class="topbar-conn">
+        <span class="conn-dot" id="conn-dot"></span>
+        <span id="conn-label" class="conn-label">CONNECTING</span>
+      </div>
+    </header>
+
+    <!-- ── MAIN AREA ── -->
+    <main class="main">
+
+      <!-- Game canvas -->
+      <section class="game-section">
+        <canvas id="game-canvas" width="420" height="540"></canvas>
+
+        <!-- Controls hint -->
+        <div class="controls-hint" id="controls-hint">
+          <div class="hint-row"><kbd>SPACE</kbd> or <kbd>CLICK</kbd> — throw</div>
+          <div class="hint-row"><kbd>HOLD</kbd> at bottom — Sleeper trick</div>
+          <div class="hint-row">Double-tap — Loop the Loop</div>
+        </div>
+
+        <!-- Trick flash overlay -->
+        <div class="trick-flash" id="trick-flash"></div>
+      </section>
+
+      <!-- Side panel -->
+      <aside class="side-panel">
+
+        <!-- Agent status -->
+        <div class="agent-card" id="agent-card">
+          <div class="agent-header">
+            <span class="agent-icon" id="agent-icon">🤖</span>
+            <div>
+              <div class="agent-title">AI AGENT</div>
+              <div class="agent-status" id="agent-status-text">IDLE</div>
+            </div>
+            <div class="agent-status-dot" id="agent-dot"></div>
+          </div>
+          <div class="agent-task" id="agent-task"></div>
+          <div class="progress-bar-wrap" id="progress-wrap">
+            <div class="progress-bar" id="progress-bar"></div>
+          </div>
+        </div>
+
+        <!-- Tricks panel -->
+        <div class="side-card">
+          <div class="side-card-title">⚡ TRICKS</div>
+          <div class="tricks-grid">
+            <div class="trick-item" id="t-sleeper"      onclick="game.requestTrick('sleeper')">
+              <span class="ti-name">Sleeper</span><span class="ti-pts">5</span>
+            </div>
+            <div class="trick-item" id="t-walkdog"      onclick="game.requestTrick('walkdog')">
+              <span class="ti-name">Walk the Dog</span><span class="ti-pts">10</span>
+            </div>
+            <div class="trick-item" id="t-rockbaby"     onclick="game.requestTrick('rockbaby')">
+              <span class="ti-name">Rock the Baby</span><span class="ti-pts">15</span>
+            </div>
+            <div class="trick-item" id="t-loop"         onclick="game.requestTrick('loop')">
+              <span class="ti-name">Loop the Loop</span><span class="ti-pts">30</span>
+            </div>
+            <div class="trick-item" id="t-around"       onclick="game.requestTrick('around')">
+              <span class="ti-name">Around World</span><span class="ti-pts">25</span>
+            </div>
+            <div class="trick-item" id="t-string"       onclick="game.requestTrick('string')">
+              <span class="ti-name">String Burn</span><span class="ti-pts">50</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Activity log -->
+        <div class="side-card side-card--log">
+          <div class="side-card-title">📋 LOG</div>
+          <div class="log-feed" id="log-feed"></div>
+        </div>
+
+        <!-- MCP badge -->
+        <div class="mcp-badge">
+          <span class="mcp-icon">⚙</span>
+          <div>
+            <div class="mcp-title">MCP ENABLED</div>
+            <div class="mcp-sub">External agents can send notifications</div>
+          </div>
+        </div>
+
+      </aside>
+    </main>
+
+    <footer class="footer">
+      PYTHON + FASTAPI + WEBSOCKETS &nbsp;·&nbsp; MCP READY &nbsp;·&nbsp; RAILWAY 24/7
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
