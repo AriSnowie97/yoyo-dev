@@ -1,7 +1,7 @@
-"""
-YoYo Dev v2 🪀 — Main FastAPI Application
-User plays yo-yo, AI agent sends notifications when tasks complete!
-"""
+import sys
+import os
+# Ensure src/ is in path when running as "uvicorn src.main:app" from project root
+sys.path.insert(0, os.path.dirname(__file__))
 
 import asyncio
 import json
