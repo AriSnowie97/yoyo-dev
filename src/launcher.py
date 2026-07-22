@@ -8,6 +8,7 @@ import uvicorn
 
 # We must import the app so PyInstaller knows to bundle it
 from main import app
+import ai_tracker
 
 def is_port_in_use(port: int) -> bool:
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
@@ -25,6 +26,9 @@ def open_browser():
 def main():
     # Start the browser thread
     threading.Thread(target=open_browser, daemon=True).start()
+    
+    # Start the AI Tracker thread
+    threading.Thread(target=ai_tracker.main, daemon=True).start()
     
     # Run the uvicorn server
     # We disable reload because it can cause issues in frozen executables
