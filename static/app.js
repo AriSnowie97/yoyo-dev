@@ -23,6 +23,8 @@ const TRICKS = {
   rockbaby: { name: 'ROCK THE BABY', pts: 15, minHold: 1.0, color: '#cc44ff' },
   loop:     { name: 'LOOP THE LOOP', pts: 30, minHold: 0.0, color: '#ffe600' },
   around:   { name: 'AROUND THE WORLD', pts: 25, minHold: 1.5, color: '#ff8800' },
+  eiffel:   { name: 'EIFFEL TOWER',  pts: 35, minHold: 1.8, color: '#ff00aa' },
+  atom:     { name: 'ATOM SMASHER',  pts: 45, minHold: 1.9, color: '#00ffcc' },
   string:   { name: 'STRING BURN',   pts: 50, minHold: 2.0, color: '#ff2244' },
 };
 
@@ -688,6 +690,10 @@ function connectWS() {
         game.addAgentBonus(msg.bonus_pts);
         spawnScorePop(`🎁 +${msg.bonus_pts}`, '#00ff41');
       }
+    }
+
+    if (msg.type === 'do_trick') {
+      game.requestTrick(msg.trick_id);
     }
   };
 

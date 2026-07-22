@@ -7,6 +7,7 @@ Run standalone: python mcp_server.py
 
 import asyncio
 import sys
+import os
 import httpx
 
 try:
@@ -17,7 +18,7 @@ try:
 except ImportError:
     MCP_AVAILABLE = False
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("YOYO_URL", "http://localhost:8000")
 
 if MCP_AVAILABLE:
     server = Server("yoyo-dev")

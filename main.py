@@ -13,7 +13,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from yoyo_agent import YoYoAgent
+from yoyo_agent import YoYoAgent, AgentStatus
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,9 +47,16 @@ async def lifespan(app: FastAPI):
         pass
 
 
+import sys
+
 app = FastAPI(title="YoYo Dev v2", lifespan=lifespan)
 
-static_path = Path(__file__).parent / "static"
+if getattr(sys, 'frozen', False):
+    base_dir = Path(sys.executable).parent
+else:
+    base_dir = Path(__file__).parent
+
+static_path = base_dir / "static"
 app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
 
@@ -63,9 +70,68 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/api/agent/status")
+@app.get("/api/status")
 async def agent_status():
-    return agent.get_state()
+    state = agent.get_state()
+    return {
+        "status": state["status"],
+        "task_name": state["current_task"],
+        "score": agent.state.score,
+        "tricks_done": agent.state.tricks_done,
+        **state
+    }
+
+@app.post("/api/task/start")
+async def task_start(body: dict):
+    agent.state.status = AgentStatus.WORKING
+    agent.state.current_task = body.get("task_name", "External Task")
+    agent.state.current_task_emoji = "🤖"
+    agent.state.progress = 0.0
+    await broadcast({"type": "agent_state", **agent.get_state()})
+    return {"ok": True}
+
+@app.post("/api/task/stop")
+async def task_stop():
+    agent.state.status = AgentStatus.DONE
+    agent.state.progress = 1.0
+    agent.state.tasks_completed += 1
+    await broadcast({"type": "agent_state", **agent.get_state()})
+    return {"ok": True}
+
+@app.post("/api/reset")
+async def reset_agent():
+    agent.state.status = AgentStatus.IDLE
+    agent.state.current_task = ""
+    agent.state.current_task_emoji = ""
+    agent.state.progress = 0.0
+    await broadcast({"type": "agent_state", **agent.get_state()})
+    return {"ok": True}
+
+TRICK_MAPPING = {
+    "Sleeper": ("sleeper", 5),
+    "Walk the Dog": ("walkdog", 10),
+    "Rock the Baby": ("rockbaby", 15),
+    "Around the World": ("around", 25),
+    "Loop the Loop": ("loop", 30),
+    "Eiffel Tower": ("eiffel", 35),
+    "Atom Smasher": ("atom", 45),
+    "String Burn": ("string", 50),
+}
+
+@app.post("/api/trick")
+async def perform_trick(body: dict):
+    trick_name = body.get("trick_name")
+    if trick_name not in TRICK_MAPPING:
+        return {"error": "Unknown trick"}
+    
+    trick_id, pts = TRICK_MAPPING[trick_name]
+    agent.state.score += pts
+    agent.state.tricks_done += 1
+    
+    # Broadcast trick event to clients
+    await broadcast({"type": "do_trick", "trick_id": trick_id, "pts": pts})
+    
+    return {"trick": trick_name, "points": pts, "score": agent.state.score}
 
 
 @app.post("/api/notify")

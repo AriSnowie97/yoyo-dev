@@ -55,6 +55,8 @@ class AgentState:
     progress: float = 0.0          # 0.0 – 1.0
     tasks_completed: int = 0
     total_bonus_pts: int = 0
+    score: int = 0
+    tricks_done: int = 0
     task_history: list = field(default_factory=list)
     started_at: float = field(default_factory=time.time)
 
@@ -80,7 +82,13 @@ class YoYoAgent:
         }
 
     def get_stats(self) -> dict:
-        return self.get_state()
+        s = self.state
+        return {
+            "score": s.score,
+            "tricks_done": s.tricks_done,
+            "tasks_completed": s.tasks_completed,
+            "uptime_seconds": int(time.time() - s.started_at)
+        }
 
     async def run_loop(self, broadcast: Callable):
         """
