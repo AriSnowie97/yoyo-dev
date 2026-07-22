@@ -642,19 +642,31 @@ function updateAgentUI(data) {
   statusEl.className   = 'agent-status ' + (data.status || 'idle').toLowerCase();
   dotEl.className      = 'agent-status-dot ' + (data.status || 'idle').toLowerCase();
 
+  progEl.classList.remove('indeterminate', 'done');
+
   if (data.status === 'WORKING') {
     taskEl.textContent = `${data.current_task_emoji || '⚙'} ${data.current_task || ''}`;
-    progEl.style.width = Math.round((data.progress || 0) * 100) + '%';
+    if (data.progress !== undefined && data.progress > 0) {
+      progEl.style.width = Math.round(data.progress * 100) + '%';
+    } else {
+      progEl.classList.add('indeterminate');
+    }
     iconEl.textContent = data.current_task_emoji || '🤖';
     document.getElementById('progress-wrap').style.display = '';
   } else {
     taskEl.textContent = data.status === 'DONE'
       ? '✅ Task complete!'
       : '👀 Waiting for activity…';
-    progEl.style.width = data.status === 'DONE' ? '100%' : '0%';
+    
+    if (data.status === 'DONE') {
+      progEl.classList.add('done');
+      progEl.style.width = '100%';
+      document.getElementById('progress-wrap').style.display = '';
+    } else {
+      progEl.style.width = '0%';
+      document.getElementById('progress-wrap').style.display = 'none';
+    }
     iconEl.textContent = data.status === 'DONE' ? '✅' : '🤖';
-    document.getElementById('progress-wrap').style.display =
-      data.status === 'DONE' ? '' : 'none';
   }
 }
 

@@ -117,8 +117,8 @@ def classify_window(title: str, process: str):
 
     # ── 2. Antigravity IDE ─────────────────────────────────────
     if "antigravity" in tl:
-        detail = _extract_page_name(title, "Antigravity")
-        return "AI_WEB", f"Antigravity: {detail}" if detail else "Antigravity IDE", "🪐"
+        detail = _extract_vscode_file(title)
+        return "IDE", detail if detail else "Antigravity IDE", "🪐"
 
     # ── 3. Browser AI (Claude, ChatGPT, Gemini, etc.) ─────────
     if "claude" in tl:
@@ -219,7 +219,8 @@ def _extract_vscode_file(title: str) -> str:
     parts = re.split(r"\s*[-–—]\s*", title)
     useful = [p.strip() for p in parts if p.strip()
               and "visual studio code" not in p.lower()
-              and "vs code" not in p.lower()]
+              and "vs code" not in p.lower()
+              and "antigravity" not in p.lower()]
     return " · ".join(useful[:2]) if useful else "VS Code"
 
 

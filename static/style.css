@@ -276,8 +276,32 @@ kbd {
   height: 100%;
   width: 0%;
   background: linear-gradient(90deg, var(--blue), var(--purple));
-  transition: width 1.8s linear;
+  transition: width 0.5s ease;
   box-shadow: 0 0 8px var(--blue);
+}
+
+.progress-bar.indeterminate {
+  width: 100% !important;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--blue),
+    var(--blue) 6px,
+    var(--purple) 6px,
+    var(--purple) 12px
+  );
+  background-size: 17px 17px;
+  animation: progress-stripes 0.6s linear infinite;
+  transition: none;
+}
+
+.progress-bar.done {
+  background: var(--green);
+  box-shadow: 0 0 10px var(--green);
+}
+
+@keyframes progress-stripes {
+  0% { background-position: 0 0; }
+  100% { background-position: 17px 0; }
 }
 
 /* ── Tricks Grid ── */

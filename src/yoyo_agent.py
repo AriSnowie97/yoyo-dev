@@ -165,42 +165,73 @@ class YoYoAgent:
 
                     await broadcast({"type": "agent_state", **self.get_state()})
 
-                    # Stay in this mode, updating every 3 s, until tracker changes
-                    elapsed = 0.0
-                    while self.state.tracker_state in ("AI_WEB", "IDE"):
-                        await asyncio.sleep(3)
-                        elapsed += 3.0
+                    duration = random.uniform(15, 35)
+                    task_start = time.time()
+                    task_end = task_start + duration
+
+                    # Loop until duration is reached OR tracker goes IDLE
+                    while self.state.tracker_state in ("AI_WEB", "IDE") and time.time() < task_end:
+                        await asyncio.sleep(2)
 
                         # Re-read in case window title / detail changed
-                        emoji, name, detail = self._real_task_info()
-                        self.state.current_task = name
-                        self.state.current_task_emoji = emoji
-                        # Gentle pulsing progress bar (never reaches 100 while active)
-                        self.state.progress = min(0.05 + (elapsed % 60) / 65, 0.95)
+                        new_emoji, new_name, _ = self._real_task_info()
+                        self.state.current_task = new_name
+                        self.state.current_task_emoji = new_emoji
+                        
+                        elapsed = time.time() - task_start
+                        self.state.progress = min(elapsed / duration, 1.0)
 
                         await broadcast({"type": "agent_state", **self.get_state()})
 
-                    # Tracker went IDLE → mark done
-                    self.state.status = AgentStatus.DONE
-                    self.state.progress = 1.0
-                    self.state.tasks_completed += 1
-                    self.state.task_history.append({
-                        "task":     name,
-                        "emoji":    emoji,
-                        "pts":      0,
-                        "time":     int(time.time()),
-                        "duration": round(elapsed, 1),
-                        "real":     True,
-                    })
-                    await broadcast({"type": "agent_state", **self.get_state()})
-                    await asyncio.sleep(2)
+                    elapsed = time.time() - task_start
+                    if elapsed >= 3.0:
+                        # Chunk completed (or interrupted after some work)
+                        self.state.status = AgentStatus.DONE
+                        self.state.progress = 1.0
+                        self.state.tasks_completed += 1
+                        
+                        bonus = int(elapsed * 5) + random.randint(20, 80)
+                        self.state.total_bonus_pts += bonus
+                        
+                        self.state.task_history.append({
+                            "task":     self.state.current_task,
+                            "emoji":    self.state.current_task_emoji,
+                            "pts":      bonus,
+                            "time":     int(time.time()),
+                            "duration": round(elapsed, 1),
+                            "real":     True,
+                        })
+                        await broadcast({"type": "agent_state", **self.get_state()})
+                        
+                        done_msgs = [
+                            f"Awesome progress on {self.state.current_task[:15]}...",
+                            "Code is flowing nicely! 💻",
+                            "One step closer to release! 🚀",
+                            "AI and Human in perfect harmony 🤖🤝",
+                            "Another chunk of work completed! ✅"
+                        ]
+                        
+                        await asyncio.sleep(0.2)
+                        await broadcast({
+                            "type": "notification",
+                            "title": f"{self.state.current_task_emoji} Task Complete",
+                            "message": random.choice(done_msgs),
+                            "bonus_pts": bonus,
+                            "level": "success",
+                            "duration": round(elapsed, 0),
+                        })
+                        await asyncio.sleep(2)
 
-                    # Back to IDLE
+                    # Back to IDLE before the next loop iteration evaluates
                     self.state.status = AgentStatus.IDLE
                     self.state.current_task = ""
                     self.state.current_task_emoji = ""
                     self.state.progress = 0.0
                     await broadcast({"type": "agent_state", **self.get_state()})
+                    
+                    if self.state.tracker_state in ("AI_WEB", "IDE"):
+                        # Short rest before picking up the next chunk of the real task
+                        await asyncio.sleep(random.uniform(2, 5))
 
                 else:
                     # ── IDLE: just wait, no fake tasks ──
