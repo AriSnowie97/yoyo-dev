@@ -9,7 +9,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -81,27 +81,33 @@ async def agent_status():
         **state
     }
 
+
 @app.post("/api/task/start")
 async def task_start(body: dict):
     agent.state.status = AgentStatus.WORKING
     agent.state.current_task = body.get("task_name", "External Task")
-    agent.state.current_task_emoji = "🤖"
+    agent.state.current_task_emoji = body.get("emoji", "🤖")
     agent.state.progress = 0.0
     await broadcast({"type": "agent_state", **agent.get_state()})
     return {"ok": True}
 
-@app.post("/api/reset")
-async def reset_agent():
-    agent.reset()
-    await broadcast({"type": "update", "state": agent.get_stats()})
-    return {"status": "ok"}
 
-@app.post("/api/tracker")
-async def update_tracker(request: Request):
-    data = await request.json()
-    state = data.get("state", "IDLE")
-    await broadcast({"type": "tracker_update", "state": state})
-    return {"status": "ok"}
+@app.post("/api/task/update")
+async def task_update(body: dict):
+    """Live task update — call this mid-task to show current step in UI."""
+    agent.state.status = AgentStatus.WORKING
+    agent.state.current_task = body.get("task_name", agent.state.current_task)
+    agent.state.current_task_emoji = body.get("emoji", agent.state.current_task_emoji or "⚙️")
+    agent.state.progress = float(body.get("progress", agent.state.progress))
+    await broadcast({"type": "agent_state", **agent.get_state()})
+    # Also log it
+    await broadcast({
+        "type":    "task_log",
+        "task":    agent.state.current_task,
+        "emoji":   agent.state.current_task_emoji,
+        "progress": agent.state.progress,
+    })
+    return {"ok": True}
 
 
 @app.post("/api/task/stop")
@@ -112,39 +118,37 @@ async def task_stop():
     await broadcast({"type": "agent_state", **agent.get_state()})
     return {"ok": True}
 
+
 @app.post("/api/reset")
 async def reset_agent():
-    agent.state.status = AgentStatus.IDLE
-    agent.state.current_task = ""
-    agent.state.current_task_emoji = ""
-    agent.state.progress = 0.0
+    agent.reset()
     await broadcast({"type": "agent_state", **agent.get_state()})
-    return {"ok": True}
+    return {"status": "ok"}
+
 
 TRICK_MAPPING = {
-    "Sleeper": ("sleeper", 5),
-    "Walk the Dog": ("walkdog", 10),
-    "Rock the Baby": ("rockbaby", 15),
-    "Around the World": ("around", 25),
-    "Loop the Loop": ("loop", 30),
-    "Eiffel Tower": ("eiffel", 35),
-    "Atom Smasher": ("atom", 45),
-    "String Burn": ("string", 50),
+    "Sleeper":          ("sleeper",  5),
+    "Walk the Dog":     ("walkdog",  10),
+    "Rock the Baby":    ("rockbaby", 15),
+    "Around the World": ("around",   25),
+    "Loop the Loop":    ("loop",     30),
+    "Eiffel Tower":     ("eiffel",   35),
+    "Atom Smasher":     ("atom",     45),
+    "String Burn":      ("string",   50),
 }
+
 
 @app.post("/api/trick")
 async def perform_trick(body: dict):
     trick_name = body.get("trick_name")
     if trick_name not in TRICK_MAPPING:
         return {"error": "Unknown trick"}
-    
+
     trick_id, pts = TRICK_MAPPING[trick_name]
     agent.state.score += pts
     agent.state.tricks_done += 1
-    
-    # Broadcast trick event to clients
+
     await broadcast({"type": "do_trick", "trick_id": trick_id, "pts": pts})
-    
     return {"trick": trick_name, "points": pts, "score": agent.state.score}
 
 
@@ -152,14 +156,38 @@ async def perform_trick(body: dict):
 async def post_notification(body: dict):
     """External endpoint — AI agents call this to push notifications to the player."""
     notif = {
-        "type": "notification",
-        "title": body.get("title", "✅ Done"),
-        "message": body.get("message", ""),
+        "type":      "notification",
+        "title":     body.get("title", "✅ Done"),
+        "message":   body.get("message", ""),
         "bonus_pts": int(body.get("bonus_pts", 0)),
-        "level": body.get("level", "success"),   # success | info | warning | error
+        "level":     body.get("level", "success"),  # success | info | warning | error
     }
     await broadcast(notif)
     return {"ok": True}
+
+
+@app.post("/api/tracker")
+async def update_tracker(request: Request):
+    """
+    Called by ai_tracker.py every time the active window changes.
+    Payload: { state, detail, window_title }
+    """
+    data         = await request.json()
+    state        = data.get("state", "IDLE")
+    detail       = data.get("detail", "")
+    window_title = data.get("window_title", "")
+
+    changed = agent.set_tracker_state(state, detail, window_title)
+
+    # Always broadcast so the UI badge updates in real time
+    await broadcast({
+        "type":         "tracker_update",
+        "state":        state,
+        "detail":       detail,
+        "window_title": window_title,
+    })
+
+    return {"status": "ok", "changed": changed}
 
 
 @app.get("/api/stats")

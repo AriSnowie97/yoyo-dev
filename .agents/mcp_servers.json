@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "yoyo-dev": {
+      "command": "python",
+      "args": ["d:/Pictures/homework/codes/Python/VS Code/yoyo-dev/src/mcp_server.py"],
+      "env": {
+        "YOYO_URL": "http://localhost:8000"
+      }
+    }
+  }
+}

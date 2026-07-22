@@ -682,6 +682,11 @@ function connectWS() {
       }
     }
 
+    if (msg.type === 'task_log') {
+      const pct = msg.progress > 0 ? ` [${Math.round(msg.progress * 100)}%]` : '';
+      addLog(`${msg.emoji || '⚙'} ${msg.task}${pct}`, 'log-agent');
+    }
+
     if (msg.type === 'notification') {
       showToast(msg);
       addLog(`🔔 ${msg.title} — ${msg.message}`, 'log-notif');
@@ -697,21 +702,35 @@ function connectWS() {
     }
     
     if (msg.type === 'tracker_update') {
-      const stateEl = document.getElementById('tracker-state');
-      const badgeEl = document.getElementById('tracker-badge');
+      const stateEl  = document.getElementById('tracker-state');
+      const badgeEl  = document.getElementById('tracker-badge');
+      const detailEl = document.getElementById('tracker-detail');
       if (stateEl && badgeEl) {
         if (msg.state === 'AI_WEB') {
           stateEl.textContent = 'CLAUDE / WEB AI';
           stateEl.style.color = '#00d4ff';
           badgeEl.style.borderColor = '#00d4ff';
+          if (detailEl) {
+            detailEl.textContent = msg.detail || msg.window_title || '';
+            detailEl.style.color = 'rgba(0,212,255,0.7)';
+          }
+          addLog(`👀 AI active: ${msg.detail || msg.window_title || 'AI Web'}`, 'log-agent');
         } else if (msg.state === 'IDE') {
           stateEl.textContent = 'CODING (IDE)';
           stateEl.style.color = '#ffe600';
           badgeEl.style.borderColor = '#ffe600';
+          if (detailEl) {
+            detailEl.textContent = msg.detail || msg.window_title || '';
+            detailEl.style.color = 'rgba(255,230,0,0.7)';
+          }
+          addLog(`💻 IDE active: ${msg.detail || msg.window_title || 'IDE'}`, 'log-agent');
         } else {
           stateEl.textContent = 'IDLE';
           stateEl.style.color = 'rgba(255,255,255,0.5)';
           badgeEl.style.borderColor = 'rgba(255,255,255,0.2)';
+          if (detailEl) {
+            detailEl.textContent = '';
+          }
         }
       }
     }

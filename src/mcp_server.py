@@ -27,6 +27,61 @@ if MCP_AVAILABLE:
     async def list_tools() -> list[types.Tool]:
         return [
             types.Tool(
+                name="update_task",
+                description=(
+                    "Update the current task shown in YoYo Dev UI. "
+                    "Call this whenever you start a new step (e.g. 'Reading files', 'Editing main.py', 'Running tests'). "
+                    "This shows the user EXACTLY what you are doing right now."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "task": {
+                            "type": "string",
+                            "description": "Short task description shown in the UI (e.g. 'Editing yoyo_agent.py', 'Running unit tests')",
+                        },
+                        "emoji": {
+                            "type": "string",
+                            "description": "Emoji for the task (e.g. '✏️', '🔍', '🧪'). Optional.",
+                        },
+                        "progress": {
+                            "type": "number",
+                            "description": "Progress 0.0–1.0. Use 0.0 when starting, 1.0 when done.",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                        },
+                    },
+                    "required": ["task"],
+                },
+            ),
+            types.Tool(
+                name="notify",
+                description="Send a completion notification to YoYo Dev when a major task is done.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Short title (e.g. '✅ Files updated')",
+                        },
+                        "message": {
+                            "type": "string",
+                            "description": "Details of what was accomplished",
+                        },
+                        "bonus_pts": {
+                            "type": "integer",
+                            "description": "Bonus points to award the player (0–500)",
+                        },
+                        "level": {
+                            "type": "string",
+                            "enum": ["success", "info", "warning", "error"],
+                            "description": "Toast color/level",
+                        },
+                    },
+                    "required": ["title", "message"],
+                },
+            ),
+            types.Tool(
                 name="set_agent_status",
                 description="Set the YoYo agent status. Use WORKING when you start a task, DONE when finished.",
                 inputSchema={
@@ -84,7 +139,28 @@ if MCP_AVAILABLE:
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            if name == "set_agent_status":
+
+            if name == "update_task":
+                task     = arguments.get("task", "Working…")
+                emoji    = arguments.get("emoji", "⚙️")
+                progress = float(arguments.get("progress", 0.0))
+                resp = await client.post("/api/task/update", json={
+                    "task_name": task,
+                    "emoji":     emoji,
+                    "progress":  progress,
+                })
+                return [types.TextContent(type="text", text=f"🪀 Task updated: {emoji} {task} ({int(progress*100)}%)")]
+
+            elif name == "notify":
+                resp = await client.post("/api/notify", json={
+                    "title":     arguments.get("title", "✅ Done"),
+                    "message":   arguments.get("message", ""),
+                    "bonus_pts": arguments.get("bonus_pts", 0),
+                    "level":     arguments.get("level", "success"),
+                })
+                return [types.TextContent(type="text", text=f"🔔 Notification sent: {arguments.get('title')}")]
+
+            elif name == "set_agent_status":
                 status = arguments.get("status", "IDLE")
                 task_name = arguments.get("task_name", "")
 
