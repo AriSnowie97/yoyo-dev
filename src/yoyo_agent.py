@@ -20,6 +20,14 @@ class AgentStatus(str, Enum):
     DONE    = "DONE"
 
 
+class BroadcastType(str, Enum):
+    AGENT_STATE    = "agent_state"
+    TASK_LOG       = "task_log"
+    DO_TRICK       = "do_trick"
+    NOTIFICATION   = "notification"
+    TRACKER_UPDATE = "tracker_update"
+
+
 # ── Simulated dev tasks (used when tracker says IDLE) ──────────
 @dataclass
 class DevTask:
@@ -145,6 +153,23 @@ class YoYoAgent:
         )
         return emoji, name, detail
 
+    async def broadcast_state(self):
+        """Helper to broadcast agent state to all clients."""
+        if self._broadcast:
+            await self._broadcast({"type": BroadcastType.AGENT_STATE, **self.get_state()})
+
+    async def broadcast_notification(self, title: str, message: str, bonus_pts: int, level: str, duration: int = 0):
+        """Helper to broadcast notification to all clients."""
+        if self._broadcast:
+            await self._broadcast({
+                "type": BroadcastType.NOTIFICATION,
+                "title": title,
+                "message": message,
+                "bonus_pts": bonus_pts,
+                "level": level,
+                "duration": duration,
+            })
+
     # ── Main agent loop ────────────────────────────────────────
     async def run_loop(self, broadcast: Callable):
         self._broadcast = broadcast
@@ -163,7 +188,7 @@ class YoYoAgent:
                     self.state.current_task_emoji = emoji
                     self.state.progress = 0.0
 
-                    await broadcast({"type": "agent_state", **self.get_state()})
+                    await self.broadcast_state()
 
                     duration = random.uniform(15, 35)
                     task_start = time.time()
@@ -181,7 +206,7 @@ class YoYoAgent:
                         elapsed = time.time() - task_start
                         self.state.progress = min(elapsed / duration, 1.0)
 
-                        await broadcast({"type": "agent_state", **self.get_state()})
+                        await self.broadcast_state()
 
                     elapsed = time.time() - task_start
                     if elapsed >= 3.0:
@@ -201,7 +226,7 @@ class YoYoAgent:
                             "duration": round(elapsed, 1),
                             "real":     True,
                         })
-                        await broadcast({"type": "agent_state", **self.get_state()})
+                        await self.broadcast_state()
                         
                         done_msgs = [
                             f"Awesome progress on {self.state.current_task[:15]}...",
@@ -212,14 +237,13 @@ class YoYoAgent:
                         ]
                         
                         await asyncio.sleep(0.2)
-                        await broadcast({
-                            "type": "notification",
-                            "title": f"{self.state.current_task_emoji} Task Complete",
-                            "message": random.choice(done_msgs),
-                            "bonus_pts": bonus,
-                            "level": "success",
-                            "duration": round(elapsed, 0),
-                        })
+                        await self.broadcast_notification(
+                            title=f"{self.state.current_task_emoji} Task Complete",
+                            message=random.choice(done_msgs),
+                            bonus_pts=bonus,
+                            level="success",
+                            duration=round(elapsed, 0)
+                        )
                         await asyncio.sleep(2)
 
                     # Back to IDLE before the next loop iteration evaluates
@@ -227,7 +251,7 @@ class YoYoAgent:
                     self.state.current_task = ""
                     self.state.current_task_emoji = ""
                     self.state.progress = 0.0
-                    await broadcast({"type": "agent_state", **self.get_state()})
+                    await self.broadcast_state()
                     
                     if self.state.tracker_state in ("AI_WEB", "IDE"):
                         # Short rest before picking up the next chunk of the real task
@@ -240,7 +264,7 @@ class YoYoAgent:
                     self.state.current_task_emoji = ""
                     self.state.progress = 0.0
                     # Broadcast only if something changed
-                    await broadcast({"type": "agent_state", **self.get_state()})
+                    await self.broadcast_state()
                     await asyncio.sleep(3)
 
             except asyncio.CancelledError:

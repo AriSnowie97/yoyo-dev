@@ -13,7 +13,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from yoyo_agent import YoYoAgent, AgentStatus
+from yoyo_agent import YoYoAgent, AgentStatus, BroadcastType
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,6 +34,45 @@ async def broadcast(data: dict):
     for c in disconnected:
         if c in connected_clients:
             connected_clients.remove(c)
+
+
+async def broadcast_agent_state():
+    await broadcast({"type": BroadcastType.AGENT_STATE, **agent.get_state()})
+
+async def broadcast_task_log():
+    await broadcast({
+        "type": BroadcastType.TASK_LOG,
+        "task": agent.state.current_task,
+        "emoji": agent.state.current_task_emoji,
+        "progress": agent.state.progress,
+    })
+
+async def broadcast_do_trick(trick_id: str, pts: int):
+    await broadcast({
+        "type": BroadcastType.DO_TRICK,
+        "trick_id": trick_id,
+        "pts": pts,
+    })
+
+async def broadcast_notification(title: str, message: str, bonus_pts: int, level: str, duration: int = 0):
+    await broadcast({
+        "type": BroadcastType.NOTIFICATION,
+        "title": title,
+        "message": message,
+        "bonus_pts": bonus_pts,
+        "level": level,
+        "duration": duration,
+    })
+
+async def broadcast_tracker_update(state: str, detail: str, emoji: str, window_title: str, process: str):
+    await broadcast({
+        "type": BroadcastType.TRACKER_UPDATE,
+        "state": state,
+        "detail": detail,
+        "emoji": emoji,
+        "window_title": window_title,
+        "process": process,
+    })
 
 
 @asynccontextmanager
@@ -88,7 +127,7 @@ async def task_start(body: dict):
     agent.state.current_task = body.get("task_name", "External Task")
     agent.state.current_task_emoji = body.get("emoji", "🤖")
     agent.state.progress = 0.0
-    await broadcast({"type": "agent_state", **agent.get_state()})
+    await broadcast_agent_state()
     return {"ok": True}
 
 
@@ -99,14 +138,9 @@ async def task_update(body: dict):
     agent.state.current_task = body.get("task_name", agent.state.current_task)
     agent.state.current_task_emoji = body.get("emoji", agent.state.current_task_emoji or "⚙️")
     agent.state.progress = float(body.get("progress", agent.state.progress))
-    await broadcast({"type": "agent_state", **agent.get_state()})
+    await broadcast_agent_state()
     # Also log it
-    await broadcast({
-        "type":    "task_log",
-        "task":    agent.state.current_task,
-        "emoji":   agent.state.current_task_emoji,
-        "progress": agent.state.progress,
-    })
+    await broadcast_task_log()
     return {"ok": True}
 
 
@@ -115,14 +149,14 @@ async def task_stop():
     agent.state.status = AgentStatus.DONE
     agent.state.progress = 1.0
     agent.state.tasks_completed += 1
-    await broadcast({"type": "agent_state", **agent.get_state()})
+    await broadcast_agent_state()
     return {"ok": True}
 
 
 @app.post("/api/reset")
 async def reset_agent():
     agent.reset()
-    await broadcast({"type": "agent_state", **agent.get_state()})
+    await broadcast_agent_state()
     return {"status": "ok"}
 
 
@@ -148,21 +182,19 @@ async def perform_trick(body: dict):
     agent.state.score += pts
     agent.state.tricks_done += 1
 
-    await broadcast({"type": "do_trick", "trick_id": trick_id, "pts": pts})
+    await broadcast_do_trick(trick_id, pts)
     return {"trick": trick_name, "points": pts, "score": agent.state.score}
 
 
 @app.post("/api/notify")
 async def post_notification(body: dict):
     """External endpoint — AI agents call this to push notifications to the player."""
-    notif = {
-        "type":      "notification",
-        "title":     body.get("title", "✅ Done"),
-        "message":   body.get("message", ""),
-        "bonus_pts": int(body.get("bonus_pts", 0)),
-        "level":     body.get("level", "success"),  # success | info | warning | error
-    }
-    await broadcast(notif)
+    await broadcast_notification(
+        title=body.get("title", "✅ Done"),
+        message=body.get("message", ""),
+        bonus_pts=int(body.get("bonus_pts", 0)),
+        level=body.get("level", "success")
+    )
     return {"ok": True}
 
 
@@ -182,14 +214,13 @@ async def update_tracker(request: Request):
     changed = agent.set_tracker_state(state, detail, window_title, emoji=emoji, process=process)
 
     # Always broadcast so the UI badge updates in real time
-    await broadcast({
-        "type":         "tracker_update",
-        "state":        state,
-        "detail":       detail,
-        "emoji":        emoji,
-        "window_title": window_title,
-        "process":      process,
-    })
+    await broadcast_tracker_update(
+        state=state,
+        detail=detail,
+        emoji=emoji,
+        window_title=window_title,
+        process=process
+    )
 
     return {"status": "ok", "changed": changed}
 
@@ -207,7 +238,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # Send current agent state on connect
     await websocket.send_text(json.dumps({
-        "type": "agent_state",
+        "type": BroadcastType.AGENT_STATE,
         **agent.get_state(),
     }))
 
