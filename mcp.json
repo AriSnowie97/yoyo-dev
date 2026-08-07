@@ -1,0 +1,15 @@
+{
+  "servers": [
+    {
+      "id": "yoyo-dev",
+      "name": "YoYo Dev MCP Server",
+      "description": "Controls the YoYo Dev agent — update tasks, send notifications, perform tricks and get stats.",
+      "transport": "stdio",
+      "command": "python",
+      "args": ["${pluginDir}/src/mcp_server.py"],
+      "env": {
+        "YOYO_URL": "http://localhost:8000"
+      }
+    }
+  ]
+}

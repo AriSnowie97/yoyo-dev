@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0.0",
+  "name": "yoyo-dev",
+  "version": "1.0.0",
+  "description": "AI agent plays yo-yo while it works — control the yo-yo from any AI client via MCP. Real-time 8-bit animation powered by Python + FastAPI + WebSockets.",
+  "publisher": "YoYo Dev",
+  "license": "MIT",
+  "homepage": "https://github.com/your-org/yoyo-dev",
+  "keywords": ["yo-yo", "ai-agent", "mcp", "gamification", "developer-tools"]
+}
