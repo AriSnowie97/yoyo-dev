@@ -19,6 +19,16 @@ def start_server():
     uvicorn.run(app, host="127.0.0.1", port=8000, reload=False)
 
 def main():
+    # Headless modes — let the packaged exe do the same jobs as the scripts.
+    if "--mcp" in sys.argv:              # Claude launches this as its MCP server
+        import asyncio
+        import mcp_server
+        asyncio.run(mcp_server.main())
+        return
+    if "--install-claude" in sys.argv or "--uninstall-claude" in sys.argv:
+        import claude_setup
+        sys.exit(claude_setup.main(["uninstall" if "--uninstall-claude" in sys.argv else "install"]))
+
     # Start the AI Tracker thread
     threading.Thread(target=ai_tracker.main, daemon=True).start()
     

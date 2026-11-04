@@ -61,6 +61,7 @@ class YoYoAgent:
 
     # bookkeeping for time-based rules
     _last_external_at: float = 0.0
+    _lease: float | None = None  # per-task override of the staleness TTL
     _last_trick_at: float = -1e9
     _chunk_started_at: float | None = None
     _chunk_duration: float = 0.0
@@ -77,24 +78,28 @@ class YoYoAgent:
         return events
 
     # ── tasks pushed by an external AI agent ───────────────────
-    def start_task(self, label: TaskLabel, now: float) -> None:
+    def start_task(self, label: TaskLabel, now: float, lease: float | None = None) -> None:
         self.status = AgentStatus.WORKING
         self.task = label
         self.progress = Progress(0.0)
         self.source = TaskSource.EXTERNAL
         self._last_external_at = now
+        self._lease = lease
         self._chunk_started_at = None
         self._raise(AgentStateChanged())
 
-    def update_task(self, label: TaskLabel | None, progress: Progress | None, now: float) -> None:
+    def update_task(self, label: TaskLabel | None, progress: Progress | None, now: float,
+                    lease: float | None = None) -> None:
         """Report a step. Implicitly starts a task if none is running."""
         if self.status != AgentStatus.WORKING or self.source != TaskSource.EXTERNAL:
-            self.start_task(label or self.task or TaskLabel("Working…"), now)
+            self.start_task(label or self.task or TaskLabel("Working…"), now, lease)
         if label is not None:
             self.task = label
         if progress is not None:
             self.progress = progress
         self._last_external_at = now
+        if lease is not None:
+            self._lease = lease
         self._raise(AgentStateChanged())
         self._raise(TaskProgressed())
 
@@ -112,7 +117,7 @@ class YoYoAgent:
         return (
             self.status == AgentStatus.WORKING
             and self.source == TaskSource.EXTERNAL
-            and now - self._last_external_at > ttl
+            and now - self._last_external_at > (self._lease or ttl)
         )
 
     def has_live_external_task(self, now: float, ttl: float) -> bool:
@@ -165,6 +170,7 @@ class YoYoAgent:
         self.task = None
         self.progress = Progress(0.0)
         self.source = None
+        self._lease = None
         self._chunk_started_at = None
 
     # ── periodic state machine ─────────────────────────────────

@@ -64,3 +64,21 @@ def test_read_cache_is_invalidated_by_events(client, container):
     assert container.queries._state_cache.hits >= 1
     client.post("/api/task/start", json={"task_name": "Fresh"})
     assert client.get("/api/status").json()["current_task"] == "Fresh"
+
+
+def test_claude_hook_endpoint_mirrors_thinking_tools_and_stop(client, clock):
+    hook = lambda **e: client.post("/api/hooks/claude", json=e)
+    hook(hook_event_name="UserPromptSubmit", prompt="secret text")
+    s = client.get("/api/status").json()
+    assert s["status"] == "WORKING" and s["current_task"] == "Claude is thinking…"
+    assert "secret" not in str(s)
+
+    clock.advance(300)                       # long thinking: still alive thanks to the lease
+    client.app.state.container.queries.invalidate()
+    hook(hook_event_name="PreToolUse", tool_name="Edit", tool_input={"file_path": r"C:\x\y\main.py"})
+    assert client.get("/api/status").json()["current_task"] == "Editing main.py"
+
+    hook(hook_event_name="Stop")
+    assert client.get("/api/status").json()["status"] == "DONE"
+    assert hook(hook_event_name="Stop").status_code == 200   # nothing running: still not an error
+    assert client.post("/api/hooks/claude", content="not json").json() == {"ok": False}

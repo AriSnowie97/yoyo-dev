@@ -50,7 +50,7 @@ class GameCommandService:
 
     async def start_task(self, cmd: StartTask) -> None:
         label = TaskLabel(cmd.name, cmd.emoji)
-        await self._transaction(lambda agent: agent.start_task(label, self._clock.now()))
+        await self._transaction(lambda agent: agent.start_task(label, self._clock.now(), cmd.lease))
 
     async def update_task(self, cmd: UpdateTask) -> None:
         def action(agent: YoYoAgent) -> None:
@@ -62,7 +62,7 @@ class GameCommandService:
                     cmd.emoji or (current.emoji if current else "⚙️"),
                 )
             progress = Progress(cmd.progress) if cmd.progress is not None else None
-            agent.update_task(label, progress, self._clock.now())
+            agent.update_task(label, progress, self._clock.now(), cmd.lease)
 
         await self._transaction(action)
 

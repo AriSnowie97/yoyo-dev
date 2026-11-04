@@ -1,13 +1,13 @@
 {
   "hooks": {
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "\"$LOCALAPPDATA/Programs/Python/Python313/python.exe\" \"$CLAUDE_PROJECT_DIR/hooks/claude_hook.py\"", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "curl -s --connect-timeout 0.2 -m 1 -X POST -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:8000/api/hooks/claude >/dev/null 2>&1 || true", "timeout": 3 }] }
     ],
     "PreToolUse": [
-      { "hooks": [{ "type": "command", "command": "\"$LOCALAPPDATA/Programs/Python/Python313/python.exe\" \"$CLAUDE_PROJECT_DIR/hooks/claude_hook.py\"", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "curl -s --connect-timeout 0.2 -m 1 -X POST -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:8000/api/hooks/claude >/dev/null 2>&1 || true", "timeout": 3 }] }
     ],
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "\"$LOCALAPPDATA/Programs/Python/Python313/python.exe\" \"$CLAUDE_PROJECT_DIR/hooks/claude_hook.py\"", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "curl -s --connect-timeout 0.2 -m 1 -X POST -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:8000/api/hooks/claude >/dev/null 2>&1 || true", "timeout": 3 }] }
     ]
   }
 }

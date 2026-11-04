@@ -52,10 +52,21 @@ uvicorn src.main:app --reload
 
 ## Claude integration
 
-**Claude Code** (this repo ships everything): `.mcp.json` registers the MCP server and `.claude/settings.json`
-adds hooks, so opening Claude Code in this folder is enough — the game mirrors Claude's real work
-(prompt → each tool call → finished) and `YOYO_AUTOSTART=1` launches the game if it is not running.
-To use it in every project: `claude mcp add --scope user yoyo-dev -- <python> <path>/src/mcp_server.py`.
+**Claude Code — in this folder:** `.mcp.json` registers the MCP server and `.claude/settings.json` adds hooks.
+The hooks are a bare `curl` that forwards Claude's events to the game (`POST /api/hooks/claude`), so the HUD shows
+*"Claude is thinking…"* the whole time Claude thinks, then each tool call, then a reward when it finishes.
+A long think no longer expires (hook tasks have a 15 min lease; `Stop` ends them).
+
+**Claude Code / Claude Desktop — everywhere (global):** run once
+
+```bash
+python src/claude_setup.py install      # or: YoYoDev.exe --install-claude
+python src/claude_setup.py uninstall    # undo (or --uninstall-claude)
+```
+
+It merges the same hooks into `~/.claude/settings.json` and registers the MCP server in Claude Desktop's config
+(backups: `*.yoyo-backup`; foreign settings are preserved). The packaged exe also acts as the MCP server
+(`YoYoDev.exe --mcp`), so no Python is needed on the machine.
 
 **Claude Desktop** (`claude_desktop_config.json`):
 

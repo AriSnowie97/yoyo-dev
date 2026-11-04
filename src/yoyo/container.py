@@ -7,6 +7,7 @@ Injection). Tests build the same container with a fake clock / seeded RNG.
 import random
 from dataclasses import dataclass
 
+from .application.claude_hooks import ClaudeActivityService
 from .application.event_bus import InProcessEventBus
 from .application.ports import Clock, EventBus
 from .application.services import GameCommandService, GameQueryService
@@ -35,6 +36,7 @@ class Container:
     hub: WebSocketHub
     commands: GameCommandService
     queries: GameQueryService
+    claude: ClaudeActivityService
     worker: ActivityWorker
 
 
@@ -64,4 +66,5 @@ def build_container(settings: Settings | None = None, clock: Clock | None = None
     bus.subscribe(TrackerChanged, broadcaster.on_tracker)
 
     worker = ActivityWorker(commands, settings.tick_interval, settings.warmup_delay)
-    return Container(settings, clock, bus, hub, commands, queries, worker)
+    claude = ClaudeActivityService(commands)
+    return Container(settings, clock, bus, hub, commands, queries, claude, worker)

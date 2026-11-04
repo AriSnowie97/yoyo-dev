@@ -11,6 +11,7 @@ from dataclasses import dataclass
 class StartTask:
     name: str
     emoji: str = "🤖"
+    lease: float | None = None
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,7 @@ class UpdateTask:
     name: str | None = None
     emoji: str | None = None
     progress: float | None = None
+    lease: float | None = None
 
 
 @dataclass(frozen=True)

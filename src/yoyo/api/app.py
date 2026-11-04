@@ -126,6 +126,24 @@ def create_app(container: Container | None = None) -> FastAPI:
         changed = await c.commands.report_tracker(body.to_command())
         return {"status": "ok", "changed": changed}
 
+    @app.post("/api/hooks/claude")
+    async def claude_hook(request: Request, c: Container = Depends(get_container)):
+        """Target of the global Claude Code hooks (a bare curl forwarding the hook JSON).
+
+        Deliberately lenient: a hook must never be able to break Claude, so
+        malformed payloads are ignored instead of rejected.
+        """
+        try:
+            event = await request.json()
+        except ValueError:
+            return {"ok": False}
+        if isinstance(event, dict):
+            try:
+                await c.claude.report(event)
+            except DomainError:
+                pass
+        return {"ok": True}
+
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
         c: Container = websocket.app.state.container

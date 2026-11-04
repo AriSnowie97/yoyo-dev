@@ -24,18 +24,20 @@ class _Request(BaseModel):
 class StartTaskRequest(_Request):
     task_name: str = Field("External Task", min_length=1, max_length=120)
     emoji: str = Field("🤖", max_length=16)
+    lease_seconds: float | None = Field(None, ge=5, le=3600)
 
     def to_command(self) -> StartTask:
-        return StartTask(self.task_name, self.emoji)
+        return StartTask(self.task_name, self.emoji, self.lease_seconds)
 
 
 class UpdateTaskRequest(_Request):
     task_name: str | None = Field(None, min_length=1, max_length=120)
     emoji: str | None = Field(None, max_length=16)
     progress: float | None = Field(None, ge=0.0, le=1.0)
+    lease_seconds: float | None = Field(None, ge=5, le=3600)
 
     def to_command(self) -> UpdateTask:
-        return UpdateTask(self.task_name, self.emoji, self.progress)
+        return UpdateTask(self.task_name, self.emoji, self.progress, self.lease_seconds)
 
 
 class TrickRequest(_Request):

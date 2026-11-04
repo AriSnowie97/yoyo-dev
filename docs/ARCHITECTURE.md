@@ -67,8 +67,10 @@ the **window tracker**, plus Claude Code **hooks**. They talk over HTTP/WebSocke
 1. **MCP server** (`src/mcp_server.py`, registered in `.mcp.json`): Claude gets tools `update_task`, `notify`,
    `get_status`, ... and server `instructions` explaining that the user is playing while it works.
    `get_status` reports `player_present` — true when the tracker sees the YoYo window in the foreground.
-2. **Hooks** (`hooks/claude_hook.py`, registered in `.claude/settings.json`): mirror Claude Code activity
-   (prompt → tool calls → stop) into the game with no cooperation from the model. Only tool names and file
-   basenames are sent.
+2. **Hooks** (a bare `curl` in `.claude/settings.json` or, globally, `~/.claude/settings.json` via
+   `claude_setup.py`): forward Claude Code events to `POST /api/hooks/claude`. The mapping to game commands lives
+   server-side in `application/claude_hooks.py`; the game shows *thinking* from the moment a prompt is submitted.
+   Hook tasks carry a 15-minute lease so long thinking does not expire; `Stop` completes them. Only tool names and
+   file basenames are used. Claude Desktop chat has no hooks — it relies on the MCP tools and server instructions.
 3. **Autostart**: with `YOYO_AUTOSTART=1` the MCP server launches the game the first time Claude reports
    something while it is down.
