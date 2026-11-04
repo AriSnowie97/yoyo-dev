@@ -738,6 +738,14 @@ function connectWS() {
             detailEl.style.color = 'rgba(255,230,0,0.7)';
           }
           addLog(`💻 IDE active: ${msg.detail || msg.window_title || 'IDE'}`, 'log-agent');
+        } else if (msg.state === 'PLAYING') {
+          stateEl.textContent = 'PLAYING 🪀';
+          stateEl.style.color = '#00ff41';
+          badgeEl.style.borderColor = '#00ff41';
+          if (detailEl) {
+            detailEl.textContent = 'AI works, you play!';
+            detailEl.style.color = 'rgba(0,255,65,0.7)';
+          }
         } else {
           stateEl.textContent = 'IDLE';
           stateEl.style.color = 'rgba(255,255,255,0.5)';

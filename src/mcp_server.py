@@ -1,231 +1,319 @@
 """
-MCP Server 🤖 — Model Context Protocol server for YoYo Dev.
-Allows external AI agents (Claude Desktop, etc.) to control the yo-yo.
+MCP Server 🤖 — lets Claude (Desktop / Code) drive the YoYo Dev game.
 
-Run standalone: python mcp_server.py
+Design (see docs/ARCHITECTURE.md, "Distributed trade-offs"):
+  * The game is *telemetry for fun*, never a dependency of Claude's real work:
+    every call is best-effort, has a short timeout and never raises. If the
+    game is not running, tools answer with a hint and Claude simply continues.
+  * After a failed call the gateway backs off for a few seconds (poor man's
+    circuit breaker) so a dead game costs Claude almost nothing.
+  * Optional ``YOYO_AUTOSTART=1`` starts the game the first time Claude
+    reports something while it is down.
+
+Run standalone: python src/mcp_server.py
 """
 
 import asyncio
-import sys
 import os
+import subprocess
+import sys
+import time
+import webbrowser
+from pathlib import Path
+from urllib.parse import urlparse
+
 import httpx
 
 try:
+    from mcp import types
     from mcp.server import Server
     from mcp.server.stdio import stdio_server
-    from mcp import types
     MCP_AVAILABLE = True
 except ImportError:
     MCP_AVAILABLE = False
 
 BASE_URL = os.environ.get("YOYO_URL", "http://localhost:8000")
+AUTOSTART = os.environ.get("YOYO_AUTOSTART", "") not in ("", "0", "false")
+REQUEST_TIMEOUT = 2.0
+BACKOFF_SECONDS = 8.0
+ROOT = Path(__file__).resolve().parent.parent
 
-TOOLS = [
-    types.Tool(
-        name="update_task",
-        description=(
-            "Update the current task shown in YoYo Dev UI. "
-            "Call this whenever you start a new step (e.g. 'Reading files', 'Editing main.py', 'Running tests'). "
-            "This shows the user EXACTLY what you are doing right now."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "task": {
-                    "type": "string",
-                    "description": "Short task description shown in the UI (e.g. 'Editing yoyo_agent.py', 'Running unit tests')",
-                },
-                "emoji": {
-                    "type": "string",
-                    "description": "Emoji for the task (e.g. '✏️', '🔍', '🧪'). Optional.",
-                },
-                "progress": {
-                    "type": "number",
-                    "description": "Progress 0.0–1.0. Use 0.0 when starting, 1.0 when done.",
-                    "minimum": 0.0,
-                    "maximum": 1.0,
-                },
-            },
-            "required": ["task"],
-        },
-    ),
-    types.Tool(
-        name="notify",
-        description="Send a completion notification to YoYo Dev when a major task is done.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "title": {
-                    "type": "string",
-                    "description": "Short title (e.g. '✅ Files updated')",
-                },
-                "message": {
-                    "type": "string",
-                    "description": "Details of what was accomplished",
-                },
-                "bonus_pts": {
-                    "type": "integer",
-                    "description": "Bonus points to award the player (0–500)",
-                },
-                "level": {
-                    "type": "string",
-                    "enum": ["success", "info", "warning", "error"],
-                    "description": "Toast color/level",
-                },
-            },
-            "required": ["title", "message"],
-        },
-    ),
-    types.Tool(
-        name="set_agent_status",
-        description="Set the YoYo agent status. Use WORKING when you start a task, DONE when finished.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "status": {
-                    "type": "string",
-                    "enum": ["IDLE", "WORKING", "DONE"],
-                    "description": "New agent status",
-                },
-                "task_name": {
-                    "type": "string",
-                    "description": "Human-readable task description (shown in UI)",
-                },
-            },
-            "required": ["status"],
-        },
-    ),
-    types.Tool(
-        name="perform_trick",
-        description="Make the yo-yo perform a trick! Earns points.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "trick_name": {
-                    "type": "string",
-                    "enum": [
-                        "Walk the Dog",
-                        "Around the World",
-                        "Rock the Baby",
-                        "Sleeper",
-                        "Loop the Loop",
-                        "String Burn",
-                        "Eiffel Tower",
-                        "Atom Smasher",
-                    ],
-                    "description": "Name of the trick to perform",
-                },
-            },
-            "required": [],
-        },
-    ),
-    types.Tool(
-        name="get_stats",
-        description="Get current YoYo agent statistics (score, tricks done, uptime).",
-        inputSchema={"type": "object", "properties": {}},
-    ),
-    types.Tool(
-        name="get_status",
-        description="Get the current status of the YoYo agent.",
-        inputSchema={"type": "object", "properties": {}},
-    ),
-]
+INSTRUCTIONS = (
+    "YoYo Dev is a small retro yo-yo game the user plays while you work. "
+    "Keep it informed so the game mirrors your REAL progress: call `update_task` "
+    "when you start each meaningful step (reading, editing, testing...) with a short "
+    "label and progress 0-1, and call `notify` (with some bonus_pts) when you finish a "
+    "major piece of work. Use `get_status` to see whether the user is currently playing "
+    "(player_present) — if they are, prefer concise progress labels so they can follow. "
+    "All YoYo tools are best-effort: if one says the game is not running, ignore it and "
+    "carry on with the user's actual task."
+)
+
+
+class GameGateway:
+    """Best-effort HTTP client for the game server."""
+
+    def __init__(self, base_url: str) -> None:
+        self._base_url = base_url
+        self._down_until = 0.0
+        self._autostart_tried = False
+
+    async def call(self, method: str, path: str, json: dict | None = None) -> tuple[int, dict] | None:
+        """Returns (status, body) or None when the game is unreachable."""
+        if time.monotonic() < self._down_until:
+            return None
+        try:
+            return await self._request(method, path, json)
+        except httpx.HTTPError:
+            if AUTOSTART and not self._autostart_tried and self._is_local():
+                self._autostart_tried = True
+                if await self._start_game():
+                    try:
+                        return await self._request(method, path, json)
+                    except httpx.HTTPError:
+                        pass
+            self._down_until = time.monotonic() + BACKOFF_SECONDS
+            return None
+
+    async def _request(self, method: str, path: str, json: dict | None) -> tuple[int, dict]:
+        async with httpx.AsyncClient(base_url=self._base_url, timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.request(method, path, json=json)
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {}
+        return resp.status_code, body
+
+    def _is_local(self) -> bool:
+        return urlparse(self._base_url).hostname in ("localhost", "127.0.0.1")
+
+    async def _start_game(self) -> bool:
+        """Launch the game (native window if pywebview exists, else browser tab)."""
+        flags = 0
+        if sys.platform == "win32":
+            flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        quiet = dict(stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     stdin=subprocess.DEVNULL, creationflags=flags, cwd=str(ROOT))
+        try:
+            try:
+                import webview  # noqa: F401
+                subprocess.Popen([sys.executable, str(ROOT / "src" / "launcher.py")], **quiet)
+                browser = False
+            except ImportError:
+                subprocess.Popen([sys.executable, str(ROOT / "src" / "main.py")], **quiet)
+                subprocess.Popen([sys.executable, str(ROOT / "src" / "ai_tracker.py")], **quiet)
+                browser = True
+        except OSError:
+            return False
+        for _ in range(20):
+            await asyncio.sleep(0.5)
+            try:
+                await self._request("GET", "/health", None)
+                if browser:
+                    webbrowser.open(self._base_url)
+                return True
+            except httpx.HTTPError:
+                continue
+        return False
+
+
+gateway = GameGateway(BASE_URL)
+
+OFFLINE = (
+    "🪀 YoYo Dev is not running right now — skipped. This is optional; "
+    "continue with the user's task. (The user can start YoYoDev.exe.)"
+)
+
+
+def _problem(status: int, body: dict) -> str:
+    detail = body.get("error") or body.get("detail") or body
+    return f"⚠️ YoYo rejected the request ({status}): {detail}"
+
+
+async def _post(path: str, payload: dict | None = None) -> tuple[bool, str, dict]:
+    result = await gateway.call("POST", path, payload or {})
+    if result is None:
+        return False, OFFLINE, {}
+    status, body = result
+    if status >= 400:
+        return False, _problem(status, body), body
+    return True, "", body
+
+
+async def handle_update_task(args: dict) -> str:
+    payload = {"task_name": args.get("task", "Working…"), "emoji": args.get("emoji", "⚙️")}
+    if "progress" in args:
+        payload["progress"] = float(args["progress"])
+    ok, msg, _ = await _post("/api/task/update", payload)
+    if not ok:
+        return msg
+    pct = f" ({int(payload.get('progress', 0) * 100)}%)" if "progress" in payload else ""
+    return f"🪀 Task updated: {payload['emoji']} {payload['task_name']}{pct}"
+
+
+async def handle_notify(args: dict) -> str:
+    payload = {
+        "title": args.get("title", "✅ Done"),
+        "message": args.get("message", ""),
+        "bonus_pts": int(args.get("bonus_pts", 0)),
+        "level": args.get("level", "success"),
+    }
+    ok, msg, _ = await _post("/api/notify", payload)
+    return f"🔔 Notification sent: {payload['title']}" if ok else msg
+
+
+async def handle_set_agent_status(args: dict) -> str:
+    status = args.get("status", "IDLE")
+    if status == "WORKING":
+        ok, msg, _ = await _post("/api/task/start", {"task_name": args.get("task_name") or "Working…"})
+    elif status == "DONE":
+        ok, msg, _ = await _post("/api/task/stop")
+    else:
+        ok, msg, _ = await _post("/api/reset")
+    return f"✅ Status set to {status}" if ok else msg
+
+
+async def handle_perform_trick(args: dict) -> str:
+    ok, msg, body = await _post("/api/trick", {"trick_name": args.get("trick_name", "")})
+    if not ok:
+        return msg
+    return f"🪀 Performed '{body.get('trick')}' (+{body.get('points', 0)} pts). Total score: {body.get('score', 0)}"
+
+
+async def handle_get_stats(args: dict) -> str:
+    result = await gateway.call("GET", "/api/stats")
+    if result is None:
+        return OFFLINE
+    d = result[1]
+    return (
+        "📊 YoYo Stats:\n"
+        f"  Score: {d.get('score', 0)} pts\n"
+        f"  Tricks done: {d.get('tricks_done', 0)}\n"
+        f"  Tasks completed: {d.get('tasks_completed', 0)}\n"
+        f"  Uptime: {d.get('uptime_seconds', 0)}s"
+    )
+
+
+async def handle_get_status(args: dict) -> str:
+    result = await gateway.call("GET", "/api/status")
+    if result is None:
+        return OFFLINE
+    d = result[1]
+    playing = "yes — the user is in the game window right now" if d.get("player_present") else "no"
+    return (
+        f"🤖 Agent status: {d.get('status', 'IDLE')}, task: '{d.get('current_task') or 'none'}', "
+        f"score: {d.get('score', 0)}\n"
+        f"🎮 Player present: {playing}\n"
+        f"👀 User is looking at: {d.get('tracker_detail') or d.get('tracker_state', 'IDLE')}"
+    )
+
+
+TOOL_HANDLERS = {
+    "update_task": handle_update_task,
+    "notify": handle_notify,
+    "set_agent_status": handle_set_agent_status,
+    "perform_trick": handle_perform_trick,
+    "get_stats": handle_get_stats,
+    "get_status": handle_get_status,
+}
 
 if MCP_AVAILABLE:
-    server = Server("yoyo-dev")
+    TRICKS = ["Sleeper", "Walk the Dog", "Rock the Baby", "Around the World",
+              "Loop the Loop", "Eiffel Tower", "Atom Smasher", "String Burn"]
+
+    TOOLS = [
+        types.Tool(
+            name="update_task",
+            description=(
+                "Show the user what you are doing RIGHT NOW in the YoYo Dev game HUD. "
+                "Call at the start of each meaningful step (e.g. 'Reading files', "
+                "'Editing main.py', 'Running tests'). Cheap and safe to call often."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "task": {"type": "string", "maxLength": 120,
+                             "description": "Short label, e.g. 'Editing yoyo_agent.py'"},
+                    "emoji": {"type": "string", "description": "Emoji, e.g. '✏️', '🔍', '🧪'. Optional."},
+                    "progress": {"type": "number", "minimum": 0.0, "maximum": 1.0,
+                                 "description": "Progress 0.0–1.0 of the overall job."},
+                },
+                "required": ["task"],
+            },
+        ),
+        types.Tool(
+            name="notify",
+            description="Pop a notification (and award bonus points) in the game when a major piece of work is done.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Short title, e.g. '✅ Tests green'"},
+                    "message": {"type": "string", "description": "What was accomplished"},
+                    "bonus_pts": {"type": "integer", "minimum": 0, "maximum": 500,
+                                  "description": "Bonus points for the player (0–500)"},
+                    "level": {"type": "string", "enum": ["success", "info", "warning", "error"]},
+                },
+                "required": ["title", "message"],
+            },
+        ),
+        types.Tool(
+            name="set_agent_status",
+            description="Set the game's agent status: WORKING when you start a job, DONE when finished, IDLE to reset.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["IDLE", "WORKING", "DONE"]},
+                    "task_name": {"type": "string", "description": "Task label (for WORKING)"},
+                },
+                "required": ["status"],
+            },
+        ),
+        types.Tool(
+            name="perform_trick",
+            description="Make the yo-yo perform a trick (earns points). Use sparingly, e.g. as a small celebration.",
+            inputSchema={
+                "type": "object",
+                "properties": {"trick_name": {"type": "string", "enum": TRICKS}},
+                "required": ["trick_name"],
+            },
+        ),
+        types.Tool(
+            name="get_stats",
+            description="Get the game's statistics (score, tricks, completed tasks, uptime).",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        types.Tool(
+            name="get_status",
+            description="Get the game's state, including whether the user is currently playing it.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+    ]
+
+    server = Server("yoyo-dev", instructions=INSTRUCTIONS)
 
     @server.list_tools()
     async def list_tools() -> list[types.Tool]:
         return TOOLS
 
-    async def handle_update_task(client: httpx.AsyncClient, arguments: dict) -> str:
-        task     = arguments.get("task", "Working…")
-        emoji    = arguments.get("emoji", "⚙️")
-        progress = float(arguments.get("progress", 0.0))
-        await client.post("/api/task/update", json={
-            "task_name": task,
-            "emoji":     emoji,
-            "progress":  progress,
-        })
-        return f"🪀 Task updated: {emoji} {task} ({int(progress*100)}%)"
-
-    async def handle_notify(client: httpx.AsyncClient, arguments: dict) -> str:
-        await client.post("/api/notify", json={
-            "title":     arguments.get("title", "✅ Done"),
-            "message":   arguments.get("message", ""),
-            "bonus_pts": arguments.get("bonus_pts", 0),
-            "level":     arguments.get("level", "success"),
-        })
-        return f"🔔 Notification sent: {arguments.get('title')}"
-
-    async def handle_set_agent_status(client: httpx.AsyncClient, arguments: dict) -> str:
-        status = arguments.get("status", "IDLE")
-        task_name = arguments.get("task_name", "")
-
-        if status == "WORKING":
-            resp = await client.post("/api/task/start", json={"task_name": task_name})
-        elif status == "DONE":
-            resp = await client.post("/api/task/stop")
-        else:
-            resp = await client.post("/api/reset")
-
-        data = resp.json()
-        return f"✅ Status set to {status}. Response: {data}"
-
-    async def handle_perform_trick(client: httpx.AsyncClient, arguments: dict) -> str:
-        trick_name = arguments.get("trick_name")
-        resp = await client.post("/api/trick", json={"trick_name": trick_name})
-        data = resp.json()
-        return f"🪀 Performed '{data.get('trick', 'trick')}' (+{data.get('points', 0)} pts). Total score: {data.get('score', 0)}"
-
-    async def handle_get_stats(client: httpx.AsyncClient, arguments: dict) -> str:
-        resp = await client.get("/api/stats")
-        data = resp.json()
-        return (
-            f"📊 YoYo Stats:\n"
-            f"  Score: {data.get('score', 0)} pts\n"
-            f"  Tricks done: {data.get('tricks_done', 0)}\n"
-            f"  Tasks completed: {data.get('tasks_completed', 0)}\n"
-            f"  Uptime: {data.get('uptime_seconds', 0)}s"
-        )
-
-    async def handle_get_status(client: httpx.AsyncClient, arguments: dict) -> str:
-        resp = await client.get("/api/status")
-        data = resp.json()
-        return f"🤖 Agent status: {data.get('status', 'IDLE')}, Task: '{data.get('task_name', 'none')}', Score: {data.get('score', 0)}"
-
-    TOOL_HANDLERS = {
-        "update_task": handle_update_task,
-        "notify": handle_notify,
-        "set_agent_status": handle_set_agent_status,
-        "perform_trick": handle_perform_trick,
-        "get_stats": handle_get_stats,
-        "get_status": handle_get_status,
-    }
-
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as client:
-            handler = TOOL_HANDLERS.get(name)
-            if handler:
-                result_text = await handler(client, arguments)
-            else:
-                result_text = f"❌ Unknown tool: {name}"
-            
-            return [types.TextContent(type="text", text=result_text)]
+        handler = TOOL_HANDLERS.get(name)
+        if handler is None:
+            text = f"❌ Unknown tool: {name}"
+        else:
+            try:
+                text = await handler(arguments or {})
+            except (TypeError, ValueError) as exc:  # bad argument types from the model
+                text = f"⚠️ Invalid arguments for {name}: {exc}"
+        return [types.TextContent(type="text", text=text)]
 
 
 async def main():
     if not MCP_AVAILABLE:
         print("❌ MCP SDK not installed. Run: pip install mcp", file=sys.stderr)
         sys.exit(1)
-
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options(),
-        )
+        await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
 if __name__ == "__main__":

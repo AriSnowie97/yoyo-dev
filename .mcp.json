@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "yoyo-dev": {
+      "command": "${LOCALAPPDATA}/Programs/Python/Python313/python.exe",
+      "args": ["src/mcp_server.py"],
+      "env": {
+        "YOYO_URL": "http://localhost:8000",
+        "YOYO_AUTOSTART": "1"
+      }
+    }
+  }
+}

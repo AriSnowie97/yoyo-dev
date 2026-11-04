@@ -50,29 +50,39 @@ uvicorn src.main:app --reload
 | POST | `/api/reset`     | Reset agent |
 | WS   | `/ws`            | WebSocket state stream |
 
-## MCP Integration
+## Claude integration
 
-Connect from Claude Desktop (`claude_desktop_config.json`):
+**Claude Code** (this repo ships everything): `.mcp.json` registers the MCP server and `.claude/settings.json`
+adds hooks, so opening Claude Code in this folder is enough — the game mirrors Claude's real work
+(prompt → each tool call → finished) and `YOYO_AUTOSTART=1` launches the game if it is not running.
+To use it in every project: `claude mcp add --scope user yoyo-dev -- <python> <path>/src/mcp_server.py`.
+
+**Claude Desktop** (`claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "yoyo-dev": {
-      "command": "python",
-      "args": ["path/to/yoyo-dev/mcp_server.py"],
-      "env": {
-        "YOYO_URL": "http://127.0.0.1:8000"
-      }
+      "command": "C:/Users/<you>/AppData/Local/Programs/Python/Python313/python.exe",
+      "args": ["C:/path/to/yoyo-dev/src/mcp_server.py"],
+      "env": { "YOYO_URL": "http://127.0.0.1:8000", "YOYO_AUTOSTART": "1" }
     }
   }
 }
 ```
 
-Available MCP tools:
-- `set_agent_status(status, task_name)` — IDLE / WORKING / DONE
-- `perform_trick(trick_name)` — earn points!
-- `get_stats()` — score, tricks, uptime
-- `get_status()` — current state
+MCP tools: `update_task`, `notify`, `set_agent_status`, `perform_trick`, `get_stats`, `get_status`
+(`get_status` also tells Claude whether you are in the game window right now). All calls are best-effort:
+if the game is closed, Claude just carries on.
+
+## Architecture & tests
+
+Clean Architecture + DDD, event-driven, DI, Repository/Unit of Work — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## Deploy to Railway
 

@@ -92,11 +92,15 @@ DESKTOP_AI_APPS = {
 def classify_window(title: str, process: str):
     """
     Returns (state, detail, app_emoji) where:
-      state      — "AI_WEB" | "IDE" | "IDLE"
+      state      — "AI_WEB" | "IDE" | "PLAYING" | "IDLE"
       detail     — short human-readable description
       app_emoji  — emoji for the app
     """
     tl = title.lower()
+
+    # ── 0. The game window itself — lets Claude know the user is playing ──
+    if tl.strip() == "yoyo dev" or process == "yoyodev.exe":
+        return "PLAYING", "YoYo Dev", "🪀"
 
     # ── 1. Desktop AI apps (by process name) ──────────────────
     if process == "claude.exe":
